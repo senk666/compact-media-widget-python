@@ -7,7 +7,7 @@ class CompactPlayer(QWidget):
     track_updated = pyqtSignal(str, str, str, str)
     def __init__(self, args):
         super().__init__()
-        self.args, self.drag_pos, self.target_icon, self.btn_alpha = args, QPoint(), "⏸", 255
+        self.args, self.drag_pos, self.target_icon, self.btn_alpha = args, QPoint(), "||", 255
         self.full_text, self.scroll_offset, self.last_art_url = "Нет медиа", 0, ""
         try:
             w_str, h_str = self.args.size.split()
@@ -63,23 +63,24 @@ class CompactPlayer(QWidget):
         self.time_lbl.setStyleSheet(f"color: rgba({self.text_color.red()}, {self.text_color.green()}, {self.text_color.blue()}, 0.7); margin: 0px; padding: 0px 4px;")
         text_container.addWidget(self.time_lbl)
         layout.addLayout(text_container, 1)
-        self.btn_style_base = f"background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.3); border: none; border-radius: 6px; font-size: 14px; min-width: {self.btn_w}px; max-width: {self.btn_w}px; min-height: {self.btn_h}px; max-height: {self.btn_h}px; margin: 0px; padding: 0px;"
-        actual_playerctl = shutil.which('playerctl') or 'playerctl'
-        self.p_cmd = [actual_playerctl]
+        self.btn_style_base = f"background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.3); border: none; border-radius: 6px; font-family: monospace; font-size: 13px; font-weight: bold; min-width: {self.btn_w}px; max-width: {self.btn_w}px; min-height: {self.btn_h}px; max-height: {self.btn_h}px; margin: 0px; padding: 0px;"
+        detected_playerctl = shutil.which('playerctl')
+        if not detected_playerctl: detected_playerctl = 'playerctl'
+        self.p_cmd = [detected_playerctl]
         if self.args.player and self.args.player.lower() != "auto": self.p_cmd.extend(['--player', self.args.player])
         if self.args.btn_prev:
-            self.btn_prev = QPushButton("⏮", self)
+            self.btn_prev = QPushButton("|<", self)
             self.btn_prev.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_prev.setStyleSheet(f"QPushButton {{{self.btn_style_base} color: {self.text_color.name()};}} QPushButton:hover {{ background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.5); }}")
             self.btn_prev.clicked.connect(lambda: subprocess.Popen(self.p_cmd + ['previous'], env=os.environ))
             layout.addWidget(self.btn_prev)
-        self.btn_play = QPushButton("⏸", self)
+        self.btn_play = QPushButton("||", self)
         self.btn_play.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.update_play_btn_style()
         self.btn_play.clicked.connect(self.toggle_play)
         layout.addWidget(self.btn_play)
         if self.args.btn_next:
-            self.btn_next = QPushButton("⏭", self)
+            self.btn_next = QPushButton(">|", self)
             self.btn_next.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_next.setStyleSheet(f"QPushButton {{{self.btn_style_base} color: {self.text_color.name()};}} QPushButton:hover {{ background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.5); }}")
             self.btn_next.clicked.connect(lambda: subprocess.Popen(self.p_cmd + ['next'], env=os.environ))
@@ -100,7 +101,7 @@ class CompactPlayer(QWidget):
         painter = QPainter(pix)
         painter.setPen(QColor("#FFFFFF"))
         painter.setFont(QFont("sans-serif", int(self.art_lbl.height()*0.4)))
-        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "🎵")
+        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "M")
         painter.end()
         self.set_rounded_pixmap(pix)
     def set_rounded_pixmap(self, pix):
@@ -178,21 +179,23 @@ class CompactPlayer(QWidget):
         self.track_lbl.setText(text[self.scroll_offset:] + text[:self.scroll_offset])
     def async_track_updater(self):
         cmd = self.p_cmd + ['metadata', '--follow', '--format', '{{artist}} - {{title}}||{{mpris:artUrl}}']
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
-        while True:
-            line = proc.stdout.readline()
-            if not line: break
-            parts = line.strip().split("||")
-            if parts and len(parts) > 1 and parts[0] and parts[0] != " - ":
-                info = str(parts[0])
-                art_url = str(parts[1]) if len(parts) > 1 else ""
-                self.track_updated.emit(info, "", art_url, "")
-            else: self.track_updated.emit("Нет медиа", "", "", "")
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
+            while True:
+                line = proc.stdout.readline()
+                if not line: break
+                parts = line.strip().split("||")
+                if parts and len(parts) > 1 and parts[0] and parts[0] != " - ":
+                    info = str(parts[0])
+                    art_url = str(parts[1]) if len(parts) > 1 else ""
+                    self.track_updated.emit(info, "", art_url, "")
+                else: self.track_updated.emit("Нет медиа", "", "", "")
+        except: self.track_updated.emit("Плеер не найден", "", "", "")
     def update_only_time(self):
         try:
             status_res = subprocess.run(self.p_cmd + ['status'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
             status = status_res.stdout.strip()
-            if status: self.start_icon_transition("▶" if status == "Paused" else "⏸")
+            if status: self.start_icon_transition(">" if status == "Paused" else "||")
             pos_res = subprocess.run(self.p_cmd + ['metadata', '--format', '{{position}}||{{mpris:length}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
             t_parts = pos_res.stdout.strip().split("||")
             if len(t_parts) == 2:
