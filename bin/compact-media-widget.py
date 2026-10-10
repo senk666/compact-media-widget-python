@@ -72,7 +72,7 @@ class CompactPlayer(QWidget):
             self.btn_prev = QPushButton("|<", self)
             self.btn_prev.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_prev.setStyleSheet(f"QPushButton {{{self.btn_style_base} color: {self.text_color.name()};}} QPushButton:hover {{ background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.5); }}")
-            self.btn_prev.clicked.connect(lambda: subprocess.Popen(self.p_cmd + ['previous'], env=os.environ))
+            self.btn_prev.clicked.connect(lambda: subprocess.Popen(self.p_cmd + ['previous'], env=self.get_clean_env()))
             layout.addWidget(self.btn_prev)
         self.btn_play = QPushButton("||", self)
         self.btn_play.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -83,7 +83,7 @@ class CompactPlayer(QWidget):
             self.btn_next = QPushButton(">|", self)
             self.btn_next.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_next.setStyleSheet(f"QPushButton {{{self.btn_style_base} color: {self.text_color.name()};}} QPushButton:hover {{ background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.5); }}")
-            self.btn_next.clicked.connect(lambda: subprocess.Popen(self.p_cmd + ['next'], env=os.environ))
+            self.btn_next.clicked.connect(lambda: subprocess.Popen(self.p_cmd + ['next'], env=self.get_clean_env()))
             layout.addWidget(self.btn_next)
         self.track_updated.connect(self.on_track_updated)
         self.worker_thread = threading.Thread(target=self.async_track_updater, daemon=True)
@@ -95,13 +95,20 @@ class CompactPlayer(QWidget):
             self.marquee_timer = QTimer(self)
             self.marquee_timer.timeout.connect(self.scroll_text)
             self.marquee_timer.start(250)
+    def get_clean_env(self):
+        env = os.environ.copy()
+        if "DBUS_SESSION_BUS_ADDRESS" not in env:
+            uid = os.getuid()
+            path = f"/run/user/{uid}/bus"
+            if os.path.exists(path): env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={path}"
+        return env
     def setDefaultArt(self):
         pix = QPixmap(self.art_lbl.width(), self.art_lbl.height())
         pix.fill(QColor("#222222"))
         painter = QPainter(pix)
         painter.setPen(QColor("#FFFFFF"))
-        painter.setFont(QFont("sans-serif", int(self.art_lbl.height()*0.4)))
-        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "M")
+        painter.setFont(QFont("sans-serif", int(self.art_lbl.height()*0.45)))
+        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "♫")
         painter.end()
         self.set_rounded_pixmap(pix)
     def set_rounded_pixmap(self, pix):
@@ -178,30 +185,28 @@ class CompactPlayer(QWidget):
         self.scroll_offset = (self.scroll_offset + 1) % len(text)
         self.track_lbl.setText(text[self.scroll_offset:] + text[:self.scroll_offset])
     def async_track_updater(self):
-        cmd = self.p_cmd + ['metadata', '--follow', '--format', '{{artist}} - {{title}}||{{mpris:artUrl}}']
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
-            while True:
-                line = proc.stdout.readline()
-                if not line: break
-                parts = line.strip().split("||")
+        while True:
+            try:
+                res = subprocess.run(self.p_cmd + ['metadata', '--format', '{{artist}} - {{title}}||{{mpris:artUrl}}'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.get_clean_env(), timeout=2)
+                parts = res.stdout.strip().split("||")
                 if parts and len(parts) > 1 and parts[0] and parts[0] != " - ":
-                    info = str(parts[0])
-                    art_url = str(parts[1]) if len(parts) > 1 else ""
-                    self.track_updated.emit(info, "", art_url, "")
+                    self.track_updated.emit(str(parts[0]), "", str(parts[1]) if len(parts) > 1 else "", "")
                 else: self.track_updated.emit("Нет медиа", "", "", "")
-        except: self.track_updated.emit("Плеер не найден", "", "", "")
+            except:
+                self.track_updated.emit("Нет медиа", "", "", "")
+            time.sleep(1.5)
     def update_only_time(self):
         try:
-            status_res = subprocess.run(self.p_cmd + ['status'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
+            status_res = subprocess.run(self.p_cmd + ['status'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=self.get_clean_env(), timeout=1)
             status = status_res.stdout.strip()
             if status: self.start_icon_transition(">" if status == "Paused" else "||")
-            pos_res = subprocess.run(self.p_cmd + ['metadata', '--format', '{{position}}||{{mpris:length}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ)
+            else: self.start_icon_transition("||")
+            pos_res = subprocess.run(self.p_cmd + ['metadata', '--format', '{{position}}||{{mpris:length}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=os.environ, timeout=1)
             t_parts = pos_res.stdout.strip().split("||")
-            if len(t_parts) == 2:
+            if len(t_parts) == 2 and t_parts[0] and t_parts[1]:
                 self.time_lbl.setText(f"{self.fmt_time(t_parts[0])}/{self.fmt_time(t_parts[1])}")
             else: self.time_lbl.setText("")
-        except: pass
+        except: self.time_lbl.setText("")
     @pyqtSlot(str, str, str, str)
     def on_track_updated(self, info, time_str, art_url, status):
         if self.full_text != info:
@@ -212,7 +217,7 @@ class CompactPlayer(QWidget):
         if art_url: self.load_art(art_url)
         else: self.setDefaultArt()
     def toggle_play(self):
-        subprocess.Popen(self.p_cmd + ['play-pause'], env=os.environ)
+        subprocess.Popen(self.p_cmd + ['play-pause'], env=self.get_clean_env())
         QTimer.singleShot(100, self.update_only_time)
 if __name__ == '__main__':
     def str2bool(v): return v.lower() in ("yes", "true", "t", "1")
