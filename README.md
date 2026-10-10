@@ -1,0 +1,1 @@
+# compact-media-widget-python
