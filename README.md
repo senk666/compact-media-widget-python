@@ -57,16 +57,16 @@ sudo pacman -S playerctl python-pyqt6
 Launch the widget utilizing the XWayland translation layer with white background properties, custom font scaling, static screen locking, and fixed `40x40px` button dimensions:
 
 ```bash
-QT_QPA_PLATFORM=xcb python mediaw.py \
-  --pos 1500 100 \
-  --size "320 50" \
-  --btn_size "40 40" \
-  --colorback "#FFFFFF" \
-  --colorbutton "#FFFFFF" \
-  --colortext "#CDD6F4" \
-  --alpha_bg 75 \
-  --draggable false \
-  --align left \
+QT_QPA_PLATFORM=xcb python mediaw.py 
+  --pos 1500 100 
+  --size "320 50" 
+  --btn_size "40 40" 
+  --colorback "#FFFFFF" 
+  --colorbutton "#FFFFFF" 
+  --colortext "#CDD6F4" 
+  --alpha_bg 75 
+  --draggable false 
+  --align left 
   --font_name "Rubik"
 ```
 
