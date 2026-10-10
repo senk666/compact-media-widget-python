@@ -1,4 +1,5 @@
-import sys, subprocess, signal, argparse, urllib.request, os, threading, time
+#!/usr/bin/env python3
+import sys, subprocess, signal, argparse, urllib.request, os, threading, time, shutil
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
 from PyQt6.QtCore import Qt, QTimer, QPoint, QVariantAnimation, QRectF, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPainter, QColor, QFont, QPixmap, QPainterPath, QFontDatabase
@@ -31,14 +32,11 @@ class CompactPlayer(QWidget):
         self.btn_anim = QVariantAnimation(self)
         self.btn_anim.setDuration(150)
         self.btn_anim.valueChanged.connect(self.animate_btn_text)
-        
-        # Проверка и настройка шрифтов с безопасным сбросом
         available_fonts = QFontDatabase.families()
         requested_font = self.args.font_name
         if requested_font not in available_fonts:
             fallback_options = ["DejaVu Sans", "Liberation Sans", "Noto Sans", "Ubuntu", "sans-serif"]
             requested_font = next((f for f in fallback_options if f in available_fonts), "sans-serif")
-            
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
@@ -66,7 +64,8 @@ class CompactPlayer(QWidget):
         text_container.addWidget(self.time_lbl)
         layout.addLayout(text_container, 1)
         self.btn_style_base = f"background: rgba({self.btn_color.red()}, {self.btn_color.green()}, {self.btn_color.blue()}, 0.3); border: none; border-radius: 6px; font-size: 14px; min-width: {self.btn_w}px; max-width: {self.btn_w}px; min-height: {self.btn_h}px; max-height: {self.btn_h}px; margin: 0px; padding: 0px;"
-        self.p_cmd = ['/usr/bin/playerctl']
+        actual_playerctl = shutil.which('playerctl') or 'playerctl'
+        self.p_cmd = [actual_playerctl]
         if self.args.player and self.args.player.lower() != "auto": self.p_cmd.extend(['--player', self.args.player])
         if self.args.btn_prev:
             self.btn_prev = QPushButton("⏮", self)
@@ -88,11 +87,9 @@ class CompactPlayer(QWidget):
         self.track_updated.connect(self.on_track_updated)
         self.worker_thread = threading.Thread(target=self.async_track_updater, daemon=True)
         self.worker_thread.start()
-        
         self.time_timer = QTimer(self)
         self.time_timer.timeout.connect(self.update_only_time)
         self.time_timer.start(1000)
-        
         if self.args.marquee:
             self.marquee_timer = QTimer(self)
             self.marquee_timer.timeout.connect(self.scroll_text)
